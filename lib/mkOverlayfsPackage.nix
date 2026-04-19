@@ -55,22 +55,27 @@ stdenv.mkDerivation {
       deps = builtins.map (x: "\"" + x + "\"") overlayDependencies;
     in
       pkgs.writeShellScript "runEnv" ''
+        set -euxo pipefail
+
         deps=(${pkgs.lib.strings.concatStringsSep " " deps});
         depsstring="";
 
         # Creating a bind mount for each dependency, overriding their permissions and ownership
         for i in "''${!deps[@]}"; do
           mkdir "$tempdir/bind/$i"
-          ${pkgs.bindfs}/bin/bindfs --perms=+w --force-user=0 --force-group=0 "''${deps[$i]}/basePackage/" "$tempdir/bind/$i"
+          echo "Making bind mount $i in $tempdir for ''${deps[$i]}"
+          ${pkgs.bindfs}/bin/bindfs --perms=+w --force-user=0 --force-group=0 "''${deps[$i]}/basePackage/" "$tempdir/bind/$i" || { echo "bindfs failed"; exit 1; }
           depsstring=":"$tempdir/bind/$i"=ro''${depsstring}"
         done
 
         # Repeating the same for the base package
         mkdir "$tempdir/bind/''${#deps[@]}"
-        ${pkgs.bindfs}/bin/bindfs --perms=+w --force-user=0 --force-group=0 "__STOREPATH__/basePackage" "$tempdir/bind/''${#deps[@]}"
+        echo "Making bind mount base in $tempdir for ''${deps[@]}"
+        ${pkgs.bindfs}/bin/bindfs --perms=+w --force-user=0 --force-group=0 "__STOREPATH__/basePackage" "$tempdir/bind/''${#deps[@]}" || { echo "bindfs failed"; exit 1; }
 
         # Joining all dependencies with unionfs
-        ${pkgs.unionfs-fuse}/bin/unionfs -o cow "$appdir=rw:$tempdir/bind/''${#deps[@]}=ro$depsstring" "$tempdir/overlay"
+        echo "Making unionfs mount, despstring: $depsstring"
+        ${pkgs.unionfs-fuse}/bin/unionfs -o cow "$appdir=rw:$tempdir/bind/''${#deps[@]}=ro$depsstring" "$tempdir/overlay" || { echo "unionfs failed"; exit 1; }
 
         cd "$tempdir/overlay/"
 
