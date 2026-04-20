@@ -11,6 +11,7 @@
   extraPreLaunchCommands ? "",
   interpreter ? "",
   basePackageName ? basePackage.pname,
+  cdToOverlay ? true
 }:
 stdenv.mkDerivation {
   pname = basePackage.pname + "-overlay";
@@ -51,6 +52,7 @@ stdenv.mkDerivation {
       executablePath,
       overlayDependencies,
       extraPreLaunchCommands,
+      cdToOverlay,
     }: let
       deps = builtins.map (x: "\"" + x + "\"") overlayDependencies;
     in
@@ -84,7 +86,7 @@ stdenv.mkDerivation {
         echo "Making unionfs mount, despstring: $depsstring"
         ${pkgs.unionfs-fuse}/bin/unionfs -o cow "$appdir=rw:$tempdir/bind/''${#deps[@]}=ro$depsstring" "$tempdir/overlay" || { echo "unionfs failed"; exit 1; }
 
-        cd "$tempdir/overlay/"
+        ${if cdToOverlay then ''cd "$tempdir/overlay/"'' else ""}
 
         ${extraPreLaunchCommands}
 
@@ -101,7 +103,7 @@ stdenv.mkDerivation {
       cp ${entryScript} ./bin/${executableName}
       sed -i "s#__STOREPATH__#$out#g" ./bin/${executableName}
 
-      cp ${(envScript {inherit executablePath overlayDependencies extraPreLaunchCommands;})} ./libexec/${executableName}-setupEnv.sh
+      cp ${(envScript {inherit executablePath overlayDependencies extraPreLaunchCommands cdToOverlay;})} ./libexec/${executableName}-setupEnv.sh
       sed -i "s#__STOREPATH__#$out#g" ./libexec/${executableName}-setupEnv.sh
       chmod a+x ./libexec/${executableName}-setupEnv.sh ./bin/${executableName} ./libexec/${executableName}-setupEnv.sh
     fi
