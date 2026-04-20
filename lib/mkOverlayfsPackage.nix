@@ -1,11 +1,11 @@
 # Author: Libor Štěpánek 2025
 {
+  lib,
   pkgs,
   stdenv,
 }: {
   basePackage,
-  executablePath,
-  executableName,
+  executables,
   overlayDependencies ? [],
   extraEnvCommands ? "",
   extraPreLaunchCommands ? "",
@@ -16,13 +16,15 @@
 stdenv.mkDerivation {
   pname = basePackage.pname + "-overlay";
   version = basePackage.version;
-  meta.executableName = executableName;
+  #meta.executableName = executableName;
   unpackPhase = ''true'';
 
   buildPhase = let
 
     # the script which serves as a stand-in for the executable specified by 'executablePath' and named as 'executableName'
-    entryScript = pkgs.writeShellScript "runApp" ''
+    entryScript = {
+      executableName
+    }: pkgs.writeShellScript "runApp" ''
       
       # Checking the location for the writable layer
       if [ -z ''${HOME+x} ]; then
@@ -98,15 +100,21 @@ stdenv.mkDerivation {
     mkdir bin libexec
     ln --symbolic ${basePackage} basePackage
 
-    # If package is executable, copy scripts, replace placeholder values with store path and name them appropriately
-    if [[ "" != "${executableName}" ]]; then
-      cp ${entryScript} ./bin/${executableName}
-      sed -i "s#__STOREPATH__#$out#g" ./bin/${executableName}
+    ${builtins.concatStringsSep "\n" (
+      lib.attrsets.mapAttrsToList (
+        executableName: executablePath: ''
+          # If package is executable, copy scripts, replace placeholder values with store path and name them appropriately
+          if [[ "" != "${executableName}" ]]; then
+            cp ${(entryScript { inherit executableName; })} ./bin/${executableName}
+            sed -i "s#__STOREPATH__#$out#g" ./bin/${executableName}
 
-      cp ${(envScript {inherit executablePath overlayDependencies extraPreLaunchCommands cdToOverlay;})} ./libexec/${executableName}-setupEnv.sh
-      sed -i "s#__STOREPATH__#$out#g" ./libexec/${executableName}-setupEnv.sh
-      chmod a+x ./libexec/${executableName}-setupEnv.sh ./bin/${executableName} ./libexec/${executableName}-setupEnv.sh
-    fi
+            cp ${(envScript {inherit executablePath overlayDependencies extraPreLaunchCommands cdToOverlay;})} ./libexec/${executableName}-setupEnv.sh
+            sed -i "s#__STOREPATH__#$out#g" ./libexec/${executableName}-setupEnv.sh
+            chmod a+x ./libexec/${executableName}-setupEnv.sh ./bin/${executableName} ./libexec/${executableName}-setupEnv.sh
+          fi
+        ''
+      ) executables
+    )}
   '';
 
   installPhase = ''
